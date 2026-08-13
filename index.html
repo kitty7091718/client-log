@@ -150,6 +150,12 @@
   .before-after{ font-family:"SFMono-Regular", Consolas, monospace; }
   .arrow{ color:var(--ink-soft); margin:0 6px; }
 
+  .record-tags{ display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+  .mini-tag{
+    font-size:11px; font-weight:600; padding:2px 9px; border-radius:20px;
+    background:#eef0ee; color:var(--ink-soft); border:1px solid var(--line);
+  }
+
   .no-records{ color:var(--ink-soft); padding:40px 0; text-align:center; }
 
   /* ---------- Modal ---------- */
@@ -180,6 +186,27 @@
   .type-toggle button.sel-ad{ background:var(--ad-bg); border-color:var(--ad); color:var(--ad); }
   .row2{ display:flex; gap:10px; }
   .row2 .field{ flex:1; }
+
+  .tag-input-box{
+    display:flex; flex-wrap:wrap; gap:6px; align-items:center;
+    border:1px solid var(--line); border-radius:8px; padding:7px 9px;
+    background:var(--paper); cursor:text;
+  }
+  .tag-input-box:focus-within{ border-color:var(--meeting); }
+  .tag-chips{ display:flex; flex-wrap:wrap; gap:6px; }
+  .tag-chip{
+    display:flex; align-items:center; gap:5px;
+    background:var(--meeting-bg); color:var(--meeting);
+    font-size:12px; font-weight:600; padding:3px 4px 3px 10px; border-radius:14px;
+  }
+  .tag-chip button{
+    border:none; background:none; cursor:pointer; color:var(--meeting);
+    font-size:14px; line-height:1; padding:0 4px;
+  }
+  #f_tagInput{
+    border:none; outline:none; flex:1; min-width:100px; padding:3px 4px;
+    background:transparent; font-size:13px;
+  }
   .modal-actions{ display:flex; justify-content:flex-end; gap:8px; margin-top:6px; }
   .hint{ font-size:11.5px; color:var(--ink-soft); margin-top:-6px; margin-bottom:14px;}
 </style>
@@ -230,6 +257,43 @@ let activeClientId = null;
 let activeTab = 'all';
 let editingRecordId = null;
 let recordType = 'meeting';
+let currentTags = [];
+
+function getAllTags(){
+  const set = new Set();
+  records.forEach(r => (r.tags||[]).forEach(t => set.add(t)));
+  return [...set].sort((a,b) => a.localeCompare(b, 'zh-Hant'));
+}
+
+function renderTagChips(){
+  const box = document.getElementById('tagChips');
+  if(!box) return;
+  box.innerHTML = currentTags.map((t,i) => `
+    <span class="tag-chip">${escapeHtml(t)}<button type="button" onclick="removeTag(${i})">×</button></span>
+  `).join('');
+}
+
+function addTagFromInput(){
+  const input = document.getElementById('f_tagInput');
+  const val = input.value.trim();
+  if(val && !currentTags.includes(val)){
+    currentTags.push(val);
+    renderTagChips();
+  }
+  input.value = '';
+}
+
+function handleTagKeydown(event){
+  if(event.key === 'Enter' || event.key === ','){
+    event.preventDefault();
+    addTagFromInput();
+  }
+}
+
+function removeTag(index){
+  currentTags.splice(index, 1);
+  renderTagChips();
+}
 
 // 即時監聽：Firestore 上的資料一有變動（不管是誰改的），畫面會自動更新
 function loadData(){
@@ -323,6 +387,8 @@ function renderMain(){
 function setTab(t){ activeTab = t; renderMain(); }
 
 function renderRecordCard(r){
+  const tagsHtml = (r.tags && r.tags.length) ? `<div class="record-tags">${r.tags.map(t => `<span class="mini-tag">${escapeHtml(t)}</span>`).join('')}</div>` : '';
+
   if(r.type === 'meeting'){
     return `<div class="record-card">
       <div class="record-top">
@@ -342,6 +408,7 @@ function renderRecordCard(r){
           <div class="k">狀態</div><div><span class="status-pill status-${r.status}">${r.status}</span></div>
         </div>
       </div>
+      ${tagsHtml}
       ${r.note ? `<div class="note">備註：${escapeHtml(r.note)}</div>` : ''}
     </div>`;
   } else {
@@ -358,14 +425,9 @@ function renderRecordCard(r){
         </div>
       </div>
       <div class="record-body">
-        <div class="kv">
-          <div class="k">平台</div><div>${escapeHtml(r.platform||'—')}</div>
-          <div class="k">調整項目</div><div>${escapeHtml(r.adjustItem||'—')}</div>
-          <div class="k">調整內容</div><div class="before-after">${escapeHtml(r.before||'—')}<span class="arrow">→</span>${escapeHtml(r.after||'—')}</div>
-          <div class="k">原因</div><div>${escapeHtml(r.reason||'—')}</div>
-          ${r.result ? `<div class="k">成效</div><div>${escapeHtml(r.result)}</div>` : ''}
-        </div>
+        ${r.content ? escapeHtml(r.content).replace(/\n/g,'<br>') : ''}
       </div>
+      ${tagsHtml}
       ${r.note ? `<div class="note">備註：${escapeHtml(r.note)}</div>` : ''}
     </div>`;
   }
@@ -467,18 +529,21 @@ function renderRecordModal(editing){
     `;
   } else {
     typeFields = `
-      <div class="row2">
-        <div class="field"><label>平台</label><input id="f_platform" placeholder="Facebook / Google / TikTok..." value="${editing?escapeHtml(editing.platform||''):''}"></div>
-        <div class="field"><label>調整項目</label><input id="f_adjustItem" placeholder="預算 / 受眾 / 素材..." value="${editing?escapeHtml(editing.adjustItem||''):''}"></div>
-      </div>
-      <div class="row2">
-        <div class="field"><label>調整前</label><input id="f_before" placeholder="例：$100/天" value="${editing?escapeHtml(editing.before||''):''}"></div>
-        <div class="field"><label>調整後</label><input id="f_after" placeholder="例：$150/天" value="${editing?escapeHtml(editing.after||''):''}"></div>
-      </div>
-      <div class="field"><label>調整原因</label><textarea id="f_reason" placeholder="為什麼做這個調整...">${editing?escapeHtml(editing.reason||''):''}</textarea></div>
-      <div class="field"><label>成效追蹤（選填）</label><input id="f_result" value="${editing?escapeHtml(editing.result||''):''}"></div>
+      <div class="field"><label>調整內容 *</label><textarea id="f_content" placeholder="這次調整了什麼，例如：FB 新增「賢止謙謙」影片素材">${editing?escapeHtml(editing.content||''):''}</textarea></div>
     `;
   }
+
+  currentTags = editing && editing.tags ? [...editing.tags] : [];
+  const tagField = `
+    <div class="field">
+      <label>標籤</label>
+      <div class="tag-input-box" onclick="document.getElementById('f_tagInput').focus()">
+        <div class="tag-chips" id="tagChips"></div>
+        <input type="text" id="f_tagInput" placeholder="輸入後按 Enter 新增" list="tagSuggestions" onkeydown="handleTagKeydown(event)">
+      </div>
+      <datalist id="tagSuggestions">${getAllTags().map(t => `<option value="${escapeHtml(t)}">`).join('')}</datalist>
+    </div>
+  `;
 
   root.innerHTML = `
     <div class="overlay" onclick="if(event.target===this) closeModal()">
@@ -486,6 +551,7 @@ function renderRecordModal(editing){
         <h3>${editing ? '編輯紀錄' : '新增紀錄'}</h3>
         ${commonTop}
         ${typeFields}
+        ${tagField}
         <div class="field"><label>備註</label><textarea id="f_note" placeholder="其他補充...">${editing?escapeHtml(editing.note||''):''}</textarea></div>
         <div class="modal-actions">
           ${editing ? `<button class="btn btn-danger" onclick="deleteRecord('${editing.id}')" style="margin-right:auto;">刪除</button>` : ''}
@@ -495,6 +561,7 @@ function renderRecordModal(editing){
       </div>
     </div>
   `;
+  renderTagChips();
 }
 
 async function saveRecord(){
@@ -502,22 +569,25 @@ async function saveRecord(){
   if(!date){ alert('請選擇日期'); return; }
   const owner = document.getElementById('f_owner').value.trim();
   const note = document.getElementById('f_note').value.trim();
+  const content = document.getElementById('f_content').value.trim();
+  if(!content){ alert(recordType==='meeting' ? '請填寫內容' : '請填寫調整內容'); return; }
 
-  let data = { clientId: activeClientId, type: recordType, date, owner, note };
+  let data = { clientId: activeClientId, type: recordType, date, owner, note, content, tags: currentTags.slice() };
 
   if(recordType === 'meeting'){
-    const content = document.getElementById('f_content').value.trim();
-    if(!content){ alert('請填寫內容'); return; }
-    data.content = content;
     data.status = document.getElementById('f_status').value;
-  } else {
-    data.platform = document.getElementById('f_platform').value.trim();
-    data.adjustItem = document.getElementById('f_adjustItem').value.trim();
-    data.before = document.getElementById('f_before').value.trim();
-    data.after = document.getElementById('f_after').value.trim();
-    data.reason = document.getElementById('f_reason').value.trim();
-    data.result = document.getElementById('f_result').value.trim();
   }
+
+  const targetId = editingRecordId || uid();
+  try{
+    await setDoc(doc(recordsCol, targetId), data);
+  }catch(e){
+    alert('儲存失敗，請確認網路連線或 Firebase 設定');
+    console.error(e);
+    return;
+  }
+  closeModal();
+}
 
   const targetId = editingRecordId || uid();
   try{
@@ -561,6 +631,8 @@ window.saveRecord = saveRecord;
 window.selectClient = selectClient;
 window.setTab = setTab;
 window.switchType = switchType;
+window.handleTagKeydown = handleTagKeydown;
+window.removeTag = removeTag;
 
 loadData();
 </script>
