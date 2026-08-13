@@ -589,17 +589,6 @@ async function saveRecord(){
   closeModal();
 }
 
-  const targetId = editingRecordId || uid();
-  try{
-    await setDoc(doc(recordsCol, targetId), data);
-  }catch(e){
-    alert('儲存失敗，請確認網路連線或 Firebase 設定');
-    console.error(e);
-    return;
-  }
-  closeModal();
-}
-
 async function deleteRecord(id){
   if(!confirm('確定要刪除這筆紀錄嗎？')) return;
   try{
