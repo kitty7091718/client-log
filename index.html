@@ -73,6 +73,13 @@
     color:var(--ink-soft);
   }
 
+  .client-group-label{
+    font-size:11px; font-weight:700; color:var(--ink-soft);
+    text-transform:uppercase; letter-spacing:.04em;
+    padding:14px 12px 6px;
+  }
+  .client-group-label.ended{ color:#a8a196; }
+
   .add-client-btn{
     margin:10px 16px 16px; padding:10px;
     background:var(--ink); color:#fff; border:none; border-radius:9px;
@@ -341,14 +348,24 @@ function renderClientList(){
     list.innerHTML = `<div style="padding:20px 12px;color:var(--ink-soft);font-size:12.5px;">${clients.length===0 ? '還沒有客戶，點下方新增' : '找不到符合的客戶'}</div>`;
     return;
   }
-  list.innerHTML = filtered.map(c => {
-    const cnt = records.filter(r => r.clientId === c.id).length;
-    return `<div class="client-item ${c.id===activeClientId?'active':''}" onclick="selectClient('${c.id}')">
+
+  const active = filtered.filter(c => c.status !== '已結束合作');
+  const ended = filtered.filter(c => c.status === '已結束合作');
+
+  const renderGroup = (arr) => arr.map(c => `
+    <div class="client-item ${c.id===activeClientId?'active':''}" onclick="selectClient('${c.id}')">
       <div class="name">${escapeHtml(c.name)}</div>
-      <div class="meta">${escapeHtml(c.contact||'未設定窗口')}${c.owner ? ' · ' + escapeHtml(c.owner) : ''}</div>
-      <div class="count">${cnt} 筆紀錄</div>
-    </div>`;
-  }).join('');
+    </div>
+  `).join('');
+
+  let html = '';
+  if(active.length){
+    html += `<div class="client-group-label">合作中</div>${renderGroup(active)}`;
+  }
+  if(ended.length){
+    html += `<div class="client-group-label ended">已結束合作</div>${renderGroup(ended)}`;
+  }
+  list.innerHTML = html;
 }
 
 function selectClient(id){
@@ -509,6 +526,12 @@ function openClientModal(id){
         <div class="field"><label>客戶名 *</label><input id="f_name" value="${editing?escapeHtml(editing.name):''}"></div>
         <div class="field"><label>聯絡窗口</label><input id="f_contact" value="${editing?escapeHtml(editing.contact||''):''}"></div>
         <div class="field"><label>負責人</label><input id="f_owner" value="${editing?escapeHtml(editing.owner||''):''}"></div>
+        <div class="field"><label>合作狀態</label>
+          <select id="f_clientStatus">
+            <option value="合作中" ${!editing||editing.status!=='已結束合作'?'selected':''}>合作中</option>
+            <option value="已結束合作" ${editing&&editing.status==='已結束合作'?'selected':''}>已結束合作</option>
+          </select>
+        </div>
         <div class="modal-actions">
           ${editing ? `<button class="btn btn-danger" onclick="deleteClient('${editing.id}')" style="margin-right:auto;">刪除客戶</button>` : ''}
           <button class="btn" onclick="closeModal()">取消</button>
@@ -524,9 +547,10 @@ async function saveClient(id){
   if(!name){ alert('請輸入客戶名'); return; }
   const contact = document.getElementById('f_contact').value.trim();
   const owner = document.getElementById('f_owner').value.trim();
+  const status = document.getElementById('f_clientStatus').value;
   const targetId = id || uid();
   try{
-    await setDoc(doc(clientsCol, targetId), { name, contact, owner }, { merge: true });
+    await setDoc(doc(clientsCol, targetId), { name, contact, owner, status }, { merge: true });
   }catch(e){
     alert('儲存失敗，請確認網路連線或 Firebase 設定');
     console.error(e);
