@@ -109,6 +109,26 @@
   .btn-primary:hover{ opacity:.9; }
   .btn-danger{ color:#a13a2b; }
 
+  .pinned-note{
+    background:#fdf6e3; border:1px solid #ecd9a0; border-radius:12px;
+    padding:14px 18px; margin-bottom:20px; position:relative;
+  }
+  .pinned-note-label{ font-size:11.5px; font-weight:700; color:#a8721c; margin-bottom:6px; }
+  .pinned-note-text{ font-size:13.5px; line-height:1.65; color:var(--ink); white-space:pre-wrap; }
+  .pinned-note-edit{
+    position:absolute; top:14px; right:16px; font-size:11.5px;
+  }
+  .pinned-note.editing textarea{
+    width:100%; min-height:80px; border:1px solid #ecd9a0; border-radius:8px;
+    padding:10px; font-family:inherit; font-size:13.5px; outline:none; resize:vertical;
+  }
+  .pinned-note-actions{ display:flex; justify-content:flex-end; gap:8px; margin-top:10px; }
+  .pinned-note-empty{
+    color:var(--ink-soft); font-size:12.5px; border:1px dashed var(--line); border-radius:10px;
+    padding:10px 14px; margin-bottom:20px; cursor:pointer; display:inline-block;
+  }
+  .pinned-note-empty:hover{ border-color:var(--meeting); color:var(--meeting); }
+
   .tabs{ display:flex; gap:6px; margin-bottom:18px; }
   .tab{
     padding:7px 14px; border-radius:20px; font-size:12.5px; font-weight:600;
@@ -233,7 +253,7 @@
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-app.js";
 import {
-  getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot
+  getFirestore, collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot
 } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js";
 
 // 你的 Firebase 設定
@@ -258,6 +278,7 @@ let activeTab = 'all';
 let editingRecordId = null;
 let recordType = 'meeting';
 let currentTags = [];
+let pinnedNoteEditing = false;
 
 function getAllTags(){
   const set = new Set();
@@ -333,6 +354,7 @@ function renderClientList(){
 function selectClient(id){
   activeClientId = id;
   activeTab = 'all';
+  pinnedNoteEditing = false;
   renderClientList();
   renderMain();
 }
@@ -372,6 +394,8 @@ function renderMain(){
       </div>
     </div>
 
+    ${renderPinnedNote(client)}
+
     <div class="tabs">
       <div class="tab ${activeTab==='all'?'active-all':''}" onclick="setTab('all')">全部</div>
       <div class="tab ${activeTab==='meeting'?'active-meeting':''}" onclick="setTab('meeting')">會議記錄</div>
@@ -382,6 +406,47 @@ function renderMain(){
       ${clientRecords.length === 0 ? `<div class="no-records">目前沒有紀錄，點右上角「新增紀錄」開始記錄</div>` : clientRecords.map(renderRecordCard).join('')}
     </div>
   `;
+}
+
+function renderPinnedNote(client){
+  if(pinnedNoteEditing){
+    return `
+      <div class="pinned-note editing">
+        <textarea id="pinnedNoteInput" placeholder="寫下這個客戶的固定事項，例如：發票抬頭、每月結算日、特殊禁忌...">${escapeHtml(client.pinnedNote || '')}</textarea>
+        <div class="pinned-note-actions">
+          <button class="btn" onclick="cancelPinnedNote()">取消</button>
+          <button class="btn btn-primary" onclick="savePinnedNote('${client.id}')">儲存</button>
+        </div>
+      </div>
+    `;
+  }
+  if(client.pinnedNote){
+    return `
+      <div class="pinned-note">
+        <div class="pinned-note-label">📌 固定備註</div>
+        <div class="pinned-note-text">${escapeHtml(client.pinnedNote).replace(/\n/g,'<br>')}</div>
+        <button class="icon-btn pinned-note-edit" onclick="pinnedNoteEditing=true; renderMain();">編輯</button>
+      </div>
+    `;
+  }
+  return `<div class="pinned-note-empty" onclick="pinnedNoteEditing=true; renderMain();">+ 新增固定備註</div>`;
+}
+
+function cancelPinnedNote(){
+  pinnedNoteEditing = false;
+  renderMain();
+}
+
+async function savePinnedNote(clientId){
+  const text = document.getElementById('pinnedNoteInput').value.trim();
+  try{
+    await updateDoc(doc(clientsCol, clientId), { pinnedNote: text });
+  }catch(e){
+    alert('儲存失敗，請確認網路連線');
+    console.error(e);
+    return;
+  }
+  pinnedNoteEditing = false;
 }
 
 function setTab(t){ activeTab = t; renderMain(); }
@@ -461,7 +526,7 @@ async function saveClient(id){
   const owner = document.getElementById('f_owner').value.trim();
   const targetId = id || uid();
   try{
-    await setDoc(doc(clientsCol, targetId), { name, contact, owner });
+    await setDoc(doc(clientsCol, targetId), { name, contact, owner }, { merge: true });
   }catch(e){
     alert('儲存失敗，請確認網路連線或 Firebase 設定');
     console.error(e);
@@ -622,6 +687,13 @@ window.setTab = setTab;
 window.switchType = switchType;
 window.handleTagKeydown = handleTagKeydown;
 window.removeTag = removeTag;
+window.cancelPinnedNote = cancelPinnedNote;
+window.savePinnedNote = savePinnedNote;
+window.renderMain = renderMain;
+Object.defineProperty(window, 'pinnedNoteEditing', {
+  get(){ return pinnedNoteEditing; },
+  set(v){ pinnedNoteEditing = v; }
+});
 
 loadData();
 </script>
